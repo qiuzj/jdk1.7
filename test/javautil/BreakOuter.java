@@ -7,7 +7,7 @@ public class BreakOuter {
 		for (;;) {
 			for (int i = 0; i < 10; i++) {
 				System.out.println(i);
-				break outer;Integer
+				break outer;
 //				continue outer;
 			}
 		}
