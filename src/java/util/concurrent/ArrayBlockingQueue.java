@@ -129,12 +129,12 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     final ReentrantLock lock;
     // Condition是为了更加精细的对锁进行控制
     /** 
-     * 如果队列为空，则等待；如果队列不为空，则通知唤醒线程获取元素
+     * 如果队列为空，则等待；如果队列不为空，则通知唤醒线程获取元素。（简单理解：等待队列非空，非空时通知唤醒消费线程）
      * <p>
      * Condition for waiting takes */
     private final Condition notEmpty;
     /** 
-     * 如果队列满了，则等待；如果队列没有满，则通知唤醒线程将元素入列
+     * 如果队列满了，则等待；如果队列没有满，则通知唤醒线程将元素入列。（简单理解：等待队列不满，不满时通知唤醒生产线程）
      * <p>
      * Condition for waiting puts */
     private final Condition notFull;
