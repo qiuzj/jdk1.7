@@ -373,13 +373,13 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
                 notFull.await();
             }
             enqueue(node);
-            c = count.getAndIncrement();
-            if (c + 1 < capacity)
+            c = count.getAndIncrement(); // c等于count的旧值，因为消费者也会改变count，所以使用原子计算，并暂存到c，保存在本次put的后续操作不变
+            if (c + 1 < capacity) // 队列未满的情况下，通知另一个生产者队列未满。c + 1 = capacity表示队列满了，则不通知。
                 notFull.signal();
         } finally {
             putLock.unlock();
         }
-        if (c == 0)
+        if (c == 0) // 队列大小从0到1，通知消费者队列非空
             signalNotEmpty();
     }
 
