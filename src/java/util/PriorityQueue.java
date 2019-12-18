@@ -321,12 +321,16 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         modCount++;
         
         int i = size;
+        // 空间满了，扩容
         if (i >= queue.length)
             grow(i + 1);
+        // 堆元素个数加1
         size = i + 1;
         
+        // 插入的是堆的第一个元素，直接放到根节点的位置
         if (i == 0)
             queue[0] = e;
+        // 非根节点，先放到树尾，再进行堆化
         else
             siftUp(i, e);
         return true;
@@ -631,15 +635,24 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             siftUpComparable(k, x);
     }
 
+    /**
+     * 向上比较并移动节点
+     *  
+     * @param k 当前待堆化的节点下标
+     * @param x 当前待堆化的节点对象
+     */
     private void siftUpComparable(int k, E x) {
         Comparable<? super E> key = (Comparable<? super E>) x;
+        // 不断往上处理，小顶堆
         while (k > 0) {
-            int parent = (k - 1) >>> 1;
-            Object e = queue[parent];
+            int parent = (k - 1) >>> 1; // 父节点的下标
+            Object e = queue[parent]; // 父节点
+            // 如果父节点e 小于等于 x，则堆化完成
             if (key.compareTo((E) e) >= 0)
                 break;
-            queue[k] = e;
-            k = parent;
+            // 如果插入的节点x 小于 父节点e，则交换位置
+            queue[k] = e; // 父节点移到当前节点x的位置
+            k = parent; // 当前待处理的节点索引k，变成父节点的索引，即父节点变成待处理的节点
         }
         queue[k] = key;
     }
@@ -671,9 +684,16 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             siftDownComparable(k, x);
     }
 
+    /**
+     * 向下比较并移动节点
+     *  
+     * @param k 当前待堆化的节点下标
+     * @param x 当前待堆化的节点对象
+     */
     private void siftDownComparable(int k, E x) {
         Comparable<? super E> key = (Comparable<? super E>)x;
         int half = size >>> 1;        // loop while a non-leaf
+        // 从位置k，开始向下查找要移动的最终位置
         while (k < half) {
             int child = (k << 1) + 1; // assume left child is least
             Object c = queue[child];
@@ -686,6 +706,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             queue[k] = c;
             k = child;
         }
+        // 将x移动到最终的位置k
         queue[k] = key;
     }
 
