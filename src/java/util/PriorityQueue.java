@@ -92,7 +92,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
      */
-    private transient Object[] queue;
+    private transient Object[] queue; // 下标从0开始
 
     /**
      * The number of elements in the priority queue.
@@ -328,7 +328,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         size = i + 1;
         
         // 插入的是堆的第一个元素，直接放到根节点的位置
-        if (i == 0)
+        if (i == 0) // size为0，表示堆为空
             queue[0] = e;
         // 非根节点，先放到树尾，再进行堆化
         else
@@ -575,13 +575,13 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     public E poll() {
         if (size == 0)
             return null;
-        int s = --size;
+        int s = --size; // 大小减1，得到最后一个堆尾下标
         modCount++;
-        E result = (E) queue[0];
-        E x = (E) queue[s];
-        queue[s] = null;
-        if (s != 0)
-            siftDown(0, x);
+        E result = (E) queue[0]; // 获得堆顶元素
+        E x = (E) queue[s]; // 获得堆尾元素
+        queue[s] = null; // 堆尾节点置null
+        if (s != 0) // s不为0，表示原来节点数>1，则需要重新堆化
+            siftDown(0, x); // 从堆尾作为堆顶向下堆化
         return result;
     }
 
@@ -617,6 +617,10 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     }
 
     /**
+     * （小顶堆）
+     * 将x插入到位置k，通过向上堆化完成。
+     * 如果x < parent，则不断往上堆化，直到x >= parent或者到达根节点时完成堆化。
+     * <p>
      * Inserts item x at position k, maintaining heap invariant by
      * promoting x up the tree until it is greater than or equal to
      * its parent, or is the root.
@@ -645,31 +649,35 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         Comparable<? super E> key = (Comparable<? super E>) x;
         // 不断往上处理，小顶堆
         while (k > 0) {
-            int parent = (k - 1) >>> 1; // 父节点的下标
+            int parent = (k - 1) >>> 1; // 父节点的下标. 下标计算公式，父节点：(n-1)/2，左孩子：2n+1，右孩子：2n+2
             Object e = queue[parent]; // 父节点
-            // 如果父节点e 小于等于 x，则堆化完成
+            // 如果x 大于等于(>=) 父节点e，则堆化完成
             if (key.compareTo((E) e) >= 0)
                 break;
-            // 如果插入的节点x 小于 父节点e，则交换位置
+            // 如果插入的节点x 小于(<) 父节点e，则交换位置
             queue[k] = e; // 父节点移到当前节点x的位置
-            k = parent; // 当前待处理的节点索引k，变成父节点的索引，即父节点变成待处理的节点
+            k = parent; // 当前待处理的节点索引k，变成父节点的索引，即"父节点变成待处理的节点"
         }
-        queue[k] = key;
+        queue[k] = key; // 将x放到找到的位置k中
     }
 
     private void siftUpUsingComparator(int k, E x) {
-        while (k > 0) {
-            int parent = (k - 1) >>> 1;
-            Object e = queue[parent];
-            if (comparator.compare(x, (E) e) >= 0)
+        while (k > 0) { // 结束条件1：到达根节点
+            int parent = (k - 1) >>> 1; // 父节点下标
+            Object e = queue[parent]; // 父节点值
+            if (comparator.compare(x, (E) e) >= 0) // 结束条件2："x >= 父节点"
                 break;
-            queue[k] = e;
-            k = parent;
+            queue[k] = e; // 交换节点，父节点往下移
+            k = parent; // 从父节点的位置继续下一轮向上堆化
         }
-        queue[k] = x;
+        queue[k] = x; // k为已找到的位置，将x放到位置k
     }
 
     /**
+     * （小顶堆）
+     * 将x插入到位置k，通过向下堆化完成。
+     * 如果x > 孩子节点，则不断往下堆化，直到x <= 孩子节点或者到达叶子节点时完成堆化。
+     * <p>
      * Inserts item x at position k, maintaining heap invariant by
      * demoting x down the tree repeatedly until it is less than or
      * equal to its children or is a leaf.
@@ -694,17 +702,17 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         Comparable<? super E> key = (Comparable<? super E>)x;
         int half = size >>> 1;        // loop while a non-leaf
         // 从位置k，开始向下查找要移动的最终位置
-        while (k < half) {
-            int child = (k << 1) + 1; // assume left child is least
-            Object c = queue[child];
-            int right = child + 1;
-            if (right < size &&
-                ((Comparable<? super E>) c).compareTo((E) queue[right]) > 0)
-                c = queue[child = right];
-            if (key.compareTo((E) c) <= 0)
+        while (k < half) { // 到达叶子节点
+            int child = (k << 1) + 1; // assume left child is least. 左孩子下标：2n+1. 这里假设左孩子节点的值更小
+            Object c = queue[child]; // 左孩子值
+            int right = child + 1; // 右孩子下标：2n+2
+            if (right < size && // 存在右孩子节点
+                ((Comparable<? super E>) c).compareTo((E) queue[right]) > 0) // 左孩子值 > 右孩子值？
+                c = queue[child = right]; // 右孩子的值更小
+            if (key.compareTo((E) c) <= 0) // 如果待处理的节点值 <= 左右孩子中的最小值，则堆化完成
                 break;
-            queue[k] = c;
-            k = child;
+            queue[k] = c; // 如果x比最小的孩子值还大，则将小孩放到父亲x的位置
+            k = child; // 继续处理最小的孩子，向下堆化
         }
         // 将x移动到最终的位置k
         queue[k] = key;
