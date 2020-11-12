@@ -430,6 +430,8 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
         private static final long serialVersionUID = 2249069246763182397L;
 
         /**
+         * 在为了"锁定segment操作"准备而可能执行阻塞获取锁之前，在预扫描中执行tryLock()的最大次数。<br>
+         * 在多处理器上，使用有限数量的重试可以维护在定位节点时获取的缓存。<br>
          * The maximum number of times to tryLock in a prescan before
          * possibly blocking on acquire in preparation for a locked
          * segment operation. On multiprocessors, using a bounded
@@ -496,7 +498,7 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
 
         final V put(K key, int hash, V value, boolean onlyIfAbsent) {
         	// tryLock()获取锁，成功返回true，失败返回false。
-            // 获取锁失败的话，则通过scanAndLockForPut()获取锁，并返回”要插入的key-value“对应的”HashEntry链表“。
+            // 如果获取锁失败，则通过scanAndLockForPut()进行有限次数的自旋tryLock()获取锁，并返回”要插入的key-value“对应的”HashEntry链表“。
             HashEntry<K,V> node = tryLock() ? null :
                 scanAndLockForPut(key, hash, value); // 如果tryLock()获得锁，此时node为null
             V oldValue;
@@ -527,7 +529,7 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
                     // 如果到达链尾仍未找到，则添加新节点
                     else {
                     	// 如果node非空，则将first设置为“node的下一个节点”。
-                        // 否则，新建HashEntry链表
+                        // 否则，新建HashEntry链表。node不为null，算是一种优化，即在scanAndLockForPut()自旋期间提前创建好了一个节点，在这里就不需要再创建，直接使用即可。
                         if (node != null) // 当node!=null时，即在scanAndLockForPut()获取锁时，已经新建了key-value对应的HashEntry节点，则”将HashEntry添加到Segment中“
                             node.setNext(first);
                         else // 否则，新建key-value对应的HashEntry节点，然后再“将HashEntry添加到Segment中”
@@ -632,7 +634,18 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
         }
 
         /**
-         * 自旋获取锁，如果节点不存在则创建节点
+         * 自旋获取锁。<br>
+         * 1.如果首次尝试时获得了锁，则返回null。<br>
+         * 2.如果获取锁失败，则额外顺便做一些工作：<br>
+         *  2.1 如果hash值对应的数组节点HashEntry不存在，则创建一个新的HashEntry对象，在最后获得锁后返回该对象；<br>
+         *  2.2 如果节点存在，则继续轮询执行tryLock()尝试获取锁，直到遇到下面2种情况：<br>
+         *   1）重试的次数达到MAX_SCAN_RETRIES，则直接进行阻塞获取锁lock()，获得锁后返回；<br>
+         *   2）如果自旋期间，头节点HashEntry发生了变化，则重新初始化e为头节点，retries设置为-1，从头开始扫描。<br>
+         * 
+         * 啰嗦了这么多，作用基本就2个：<br>
+         * 1.尝试自旋获取锁，多试几次，而不是阻塞获取；<br>
+         * 2.如果节点所在位置为空，则顺便创建一个；<br>
+         * 实在不行了，就直接阻塞式获取锁lock()。因为，自旋太多也会浪费CPU资源，这样反而成本更高了。<br>
          * <p>
          * Scans for a node containing given key while trying to
          * acquire lock, creating and returning one if not found. Upon
@@ -658,7 +671,9 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
             // 此外，若在自旋期间，HashEntry链表的表头发生变化；则重新进行查找和自旋工作！
             while (!tryLock()) { // 自旋尝试获取锁，在没获取到锁的时候，有空做一些检查和准备工作（如创建节点）；如果自旋太多次都没希望，则直接lock()长期等待
                 HashEntry<K,V> f; // to recheck first below
-                // 1. retries<0的处理情况
+                // 1. retries<0的处理情况. 如果e不为空，并且不是要查找的节点，则会多次进入这段逻辑。
+                // 有2种情况会退出，1）当遇到e为null时，可能是第一个节点为null，也可能是查到链尾了；2）找到了节点。对于这2种情况，retries被置为0。
+                // 否则，将会一直进入这段逻辑，每次执行e=e.next.
                 if (retries < 0) {
                 	// 1.1 如果当前的HashEntry节点为空(意味着，在该HashEntry链表上没有找到”要插入的键值对“对应的节点)，而且node=null；则新建HashEntry链表。
                     if (e == null) { // 已到达HashEntry链尾（也可能是该桶位根本没有元素）
@@ -669,20 +684,21 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
                     // 1.2 如果当前的HashEntry节点是”要插入的键值对在该HashEntry上对应的节点“，则设置retries=0
                     else if (key.equals(e.key)) // 此处为何又不是比较key == e.key，而且不需要比较hash?
                         retries = 0;
-                    // 1.3 设置为下一个HashEntry。
+                    // 1.3 如果e不为空，并且找不到节点，则查找链表的下一个节点。e设置为下一个HashEntry。
                     else
                         e = e.next;
                 }
-                // 2. 如果自旋次数超过限制，则获取“锁”并退出
-                else if (++retries > MAX_SCAN_RETRIES) {
+                // 2. 如果自旋次数超过限制，则使用阻塞获取“锁”（尝试太多次浪费CPU资源）
+                else if (++retries > MAX_SCAN_RETRIES) { // 非单处理器时MAX_SCAN_RETRIES为64
                     lock();
                     break;
                 }
-                // 3. 当“尝试了偶数次”时，就获取“当前Segment的第一个HashEntry”，即f。
+                // 4.若在自旋期间，HashEntry链表的表头发生变化，则重新进行查找和自旋工作，从头开始轮询。
+                // 当“尝试了偶数次”时，就获取“当前Segment的第一个HashEntry”，即f。
                 // 然后，通过f!=first来判断“当前Segment的第一个HashEntry是否发生了改变”。
                 // 若是的话，则重置e，first和retries的值，并重新遍历。
                 else if ((retries & 1) == 0 &&
-                         (f = entryForHash(this, hash)) != first) { // 若在自旋期间，HashEntry链表的表头发生变化；则重新进行查找和自旋工作. 相当于中奖：再来一次
+                         (f = entryForHash(this, hash)) != first) {
                     e = first = f; // re-traverse if entry changed
                     retries = -1;
                 }
@@ -1140,7 +1156,7 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * 返回key在ConcurrentHashMap哈希表中对应的值
+     * 返回key在ConcurrentHashMap哈希表中对应的值.<br>
      * 
      * Returns the value to which the specified key is mapped,
      * or {@code null} if this map contains no mapping for the key.
