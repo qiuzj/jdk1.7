@@ -394,8 +394,12 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
 
     /**
      * “锁分段”对应的存储结构.
-     * Segment本质上是一个可重入的互斥锁。
+     * Segment本质上是一个可重入的互斥锁。<br>
      * 
+     * 分段是哈希表的专门版本。<br>
+     * 这个继承自ReentrantLock的子类是有机会的，只是为了简化一些锁定并避免单独的构造。<br>
+     * 
+     * <p>
      * Segments are specialized versions of hash tables.  This
      * subclasses from ReentrantLock opportunistically, just to
      * simplify some locking and avoid separate construction.
@@ -1157,6 +1161,14 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
 
     /**
      * 返回key在ConcurrentHashMap哈希表中对应的值.<br>
+     * 获取流程：
+     * <ol>
+     * <li>根据key计算出哈希值h；
+     * <li>根据h计算出key所在Segment数组（segments）的下标，得到所在的Segment；
+     * <li>根据h计算出key所在Segment的HashEntry数组（table）的下标，得到所在的HashEntry；
+     * <li>遍历HashEntry，查找key是否存在，先通过=比较，不相等再通过equals比较；
+     * <li>存在则返回对应的值，不存在则返回null。
+     * </ol>
      * 
      * Returns the value to which the specified key is mapped,
      * or {@code null} if this map contains no mapping for the key.
@@ -1301,7 +1313,14 @@ public class ConcurrentHashMap<K, V> extends AbstractMap<K, V>
     }
 
     /**
-     * 添加键值对
+     * 添加键值对.<br>
+     * 主要流程：
+     * <ol>
+     * <li>根据key计算出哈希值h；
+     * <li>根据h计算出key所在Segment数组（segments）的下标，得到所在的Segment；
+     * <li>如果Segment不存在，则通过CAS自旋，创建一个新的Segment并保存到segments数组的相应位置；
+     * <li>最后，再将新的键值对保存到Segment中。
+     * </ol>
      * <p>
      * Maps the specified key to the specified value in this table.
      * Neither the key nor the value can be null.
